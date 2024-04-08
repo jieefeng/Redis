@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 /**
  * <p>
@@ -68,14 +69,22 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         }
 
         //4.判断库存是否充足
-        if (seckillVoucher.getStock() <= 0){
+        Integer stock = seckillVoucher.getStock();
+        if (stock <= 0){
             return Result.fail("库存不足");
         }
 
         //5.扣减库存
-        seckillVoucherService.update()
+        //5.1判断是否已经被修改过
+        boolean success = seckillVoucherService.update()
                 .setSql("stock = stock -1")
-                .eq("voucher_id",voucherId).update();
+                .eq("voucher_id", voucherId).gt("stock", 0) //where id = ? and stock > 0
+                .update();
+
+        if(!success){
+            //扣减失败
+            return Result.fail("库存不足");
+        }
 
         //6.创建订单
         VoucherOrder voucherOrder = new VoucherOrder();
