@@ -12,7 +12,9 @@ import com.hmdp.service.IVoucherOrderService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.UserHolder;
+import org.springframework.aop.framework.AopContext;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
@@ -40,6 +42,8 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
     @Resource
     private RedisIdWorker redisIdWorker;
+
+
 
     /**
      * 优惠卷秒杀
@@ -74,6 +78,28 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             return Result.fail("库存不足");
         }
 
+        Long userId = UserHolder.getUser().getId();
+        synchronized (userId.toString().intern()) {
+            //获取代理对象（事务）
+            IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
+            return proxy.createVoucherOrder(voucherId);
+        }
+
+    }
+
+    @Transactional
+    public Result createVoucherOrder(Long voucherId) {
+
+        //4.一人一单
+        //4.1获取用户id
+        Long userId = UserHolder.getUser().getId();
+        //4.2查询订单
+        int count = query().eq("user_id", userId).eq("voucher_id", voucherId).count();
+        //4.3判断是否存在
+        if(count > 0){
+            return Result.fail("用户已经购买过了");
+        }
+
         //5.扣减库存
         //5.1判断是否已经被修改过
         boolean success = seckillVoucherService.update()
@@ -85,14 +111,12 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             //扣减失败
             return Result.fail("库存不足");
         }
-
         //6.创建订单
         VoucherOrder voucherOrder = new VoucherOrder();
         //6.1订单id
         Long id = redisIdWorker.nextId("order");
         voucherOrder.setId(id);
         //6.2用户id
-        Long userId = UserHolder.getUser().getId();
         voucherOrder.setUserId(userId);
         //6.3代金卷
         voucherOrder.setVoucherId(voucherId);
@@ -100,7 +124,6 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
         //7.返回订单id
         return Result.ok(voucherId);
-
     }
 }
 
