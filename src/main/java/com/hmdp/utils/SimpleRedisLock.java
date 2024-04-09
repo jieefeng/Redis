@@ -1,10 +1,11 @@
 package com.hmdp.utils;
 
 import cn.hutool.core.lang.UUID;
-import com.hmdp.dto.Result;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 
-import java.awt.image.RasterFormatException;
+import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 
 public class SimpleRedisLock implements ILock{
@@ -16,6 +17,13 @@ public class SimpleRedisLock implements ILock{
     private StringRedisTemplate stringRedisTemplate;
 
     private static final String ID_PREFIX = UUID.randomUUID().toString(true)+ "-";
+
+    private static final DefaultRedisScript<Long> UNLOCK_SCRIPT;
+    static {
+        UNLOCK_SCRIPT = new DefaultRedisScript<>();
+        UNLOCK_SCRIPT.setLocation(new ClassPathResource("aa.lua"));
+        UNLOCK_SCRIPT.setResultType(Long.class);
+    }
 
     public SimpleRedisLock(String name, StringRedisTemplate stringRedisTemplate) {
         this.name = name;
@@ -35,13 +43,12 @@ public class SimpleRedisLock implements ILock{
     }
 
     public void unLock() {
-        //获取线程标识
-        String value = stringRedisTemplate.opsForValue().get(KEY_PREFIX + name);
-        //判断是否是自己的锁
-        if(!value.equals(ID_PREFIX + Thread.currentThread().getId())){
-            return;
-        }
-        stringRedisTemplate.delete(KEY_PREFIX + name);
+        //调用lua脚本
+        stringRedisTemplate.execute(
+                UNLOCK_SCRIPT,
+                Collections.singletonList(KEY_PREFIX + name),//key
+                ID_PREFIX + Thread.currentThread().getId()//value
+                );
     }
 }
 
